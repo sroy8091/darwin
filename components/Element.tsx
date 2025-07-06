@@ -6,12 +6,12 @@ import { ELEMENT_CONFIG, ELEMENT_DIMENSIONS } from '../constants';
 interface ElementProps {
   data: ElementData;
   onRename: (id: string, newName: string) => void;
-  onStartConnection: (id: string) => void;
-  onMouseDown: (event: React.MouseEvent) => void;
+  onStartConnection: (event: React.MouseEvent | React.TouchEvent, id: string) => void;
+  onPointerDown: (event: React.MouseEvent | React.TouchEvent) => void;
   isSelected?: boolean;
 }
 
-export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnection, onMouseDown, isSelected }) => {
+export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnection, onPointerDown, isSelected }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(data.name);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -72,6 +72,11 @@ export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnect
   const width = data.width || ELEMENT_DIMENSIONS.width;
   const height = data.height || ELEMENT_DIMENSIONS.height;
 
+  const handleStartConnection = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    onStartConnection(e, id);
+  }
+
   return (
     <div
       style={{
@@ -80,15 +85,17 @@ export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnect
         width: width,
         height: height,
       }}
-      className={`absolute select-none rounded-lg shadow-md border-2 transition-shadow duration-200 ${isTextBox ? 'cursor-text' : 'cursor-grab'} ${config.color} ${config.textColor} ${selectionClasses}`}
+      className={`absolute select-none rounded-lg shadow-md border-2 transition-shadow duration-200 ${isTextBox ? 'cursor-text' : 'cursor-grab'} ${config.color} ${config.textColor} ${selectionClasses} active:cursor-grabbing`}
       onDoubleClick={handleDoubleClick}
-      onMouseDown={onMouseDown}
+      onMouseDown={onPointerDown}
+      onTouchStart={onPointerDown}
       data-element-id={id}
     >
       <div 
         className={`w-full h-full ${isTextBox ? 'p-2' : 'p-3 flex items-center'}`}
         // Prevent pan when double-clicking to edit text.
         onMouseDown={(e) => { if(isEditing) e.stopPropagation() }}
+        onTouchStart={(e) => { if(isEditing) e.stopPropagation() }}
       >
         {isTextBox ? (
           <textarea
@@ -100,6 +107,7 @@ export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnect
             className="bg-transparent w-full h-full text-center outline-none resize-none"
             spellCheck="false"
             onMouseDown={(e) => e.stopPropagation()} // Prevent canvas pan when clicking text area
+            onTouchStart={(e) => e.stopPropagation()}
           />
         ) : (
           <>
@@ -115,6 +123,7 @@ export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnect
                   onKeyDown={handleKeyDown}
                   className="bg-transparent w-full text-center border-b border-dashed border-gray-400 outline-none"
                   onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
                 />
               ) : (
                 <span className="font-semibold break-words">{data.name}</span>
@@ -126,10 +135,8 @@ export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnect
 
       <div 
         className="absolute right-[-8px] top-1/2 -translate-y-1/2 w-4 h-4 bg-cyan-500 rounded-full cursor-crosshair border-2 border-white hover:scale-125 transition-transform"
-        onMouseDown={(e) => {
-            e.stopPropagation();
-            onStartConnection(id);
-        }}
+        onMouseDown={handleStartConnection}
+        onTouchStart={handleStartConnection}
         title="Drag to connect"
       />
 
