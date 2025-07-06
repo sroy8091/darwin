@@ -1,0 +1,6 @@
+{
+  "name": "Darwin",
+  "description": "An interactive web application for creating High-Level Design (HLD) diagrams. Users can drag and drop predefined components like load balancers and databases onto a canvas, connect them with arrows, and create custom elements. The intuitive interface allows for easy manipulation and renaming of components, with connectors dynamically adjusting to element movements.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
