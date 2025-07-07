@@ -1,15 +1,20 @@
 
-import React, { useState, useCallback, useEffect, useRef, forwardRef } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { ElementData, ConnectorData, ElementType, Point } from '../types';
 import { ELEMENT_CONFIG, ELEMENT_DIMENSIONS } from '../constants';
 import { Element } from './Element';
 import { ConnectorLine } from './ConnectorLine';
+
+export interface CanvasHandle {
+    addElementAtCenter: (type: ElementType) => void;
+}
 
 interface CanvasProps {
     elements: ElementData[];
     setElements: React.Dispatch<React.SetStateAction<ElementData[]>>;
     connectors: ConnectorData[];
     setConnectors: React.Dispatch<React.SetStateAction<ConnectorData[]>>;
+    exportRef: React.RefObject<HTMLDivElement>;
 }
 
 interface Transform {
@@ -37,8 +42,8 @@ interface PinchState {
 }
 
 const getAttachmentPoint = (el: ElementData, targetCenter: Point): Point => {
-    const w = el.width || ELEMENT_DIMENSIONS.width;
-    const h = el.height || ELEMENT_DIMENSIONS.height;
+    const w = el.width || ELEMENT_CONFIG[el.type].defaultWidth || ELEMENT_DIMENSIONS.width;
+    const h = el.height || ELEMENT_CONFIG[el.type].defaultHeight || ELEMENT_DIMENSIONS.height;
     const elCenter = { x: el.x + w / 2, y: el.y + h / 2 };
 
     const dx = targetCenter.x - elCenter.x;
@@ -56,8 +61,8 @@ const getAttachmentPoint = (el: ElementData, targetCenter: Point): Point => {
     }
 };
 
-const CanvasComponent: React.ForwardRefRenderFunction<HTMLDivElement, CanvasProps> = (
-    { elements, setElements, connectors, setConnectors },
+const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps> = (
+    { elements, setElements, connectors, setConnectors, exportRef },
     ref
 ) => {
     const canvasRef = useRef<HTMLDivElement>(null);
@@ -70,6 +75,41 @@ const CanvasComponent: React.ForwardRefRenderFunction<HTMLDivElement, CanvasProp
     const lastPointerPosition = useRef<Point>({ x: 0, y: 0 });
     const pinchState = useRef<PinchState | null>(null);
 
+    // Auto-frame the diagram on initial load.
+    useLayoutEffect(() => {
+        if (elements.length === 0 || !canvasRef.current) return;
+
+        const PADDING = 100;
+
+        const getElWidth = (el: ElementData) => el.width || ELEMENT_CONFIG[el.type].defaultWidth || ELEMENT_DIMENSIONS.width;
+        const getElHeight = (el: ElementData) => el.height || ELEMENT_CONFIG[el.type].defaultHeight || ELEMENT_DIMENSIONS.height;
+
+        const minX = Math.min(...elements.map(el => el.x));
+        const minY = Math.min(...elements.map(el => el.y));
+        const maxX = Math.max(...elements.map(el => el.x + getElWidth(el)));
+        const maxY = Math.max(...elements.map(el => el.y + getElHeight(el)));
+
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+
+        const canvasWidth = canvasRef.current.clientWidth;
+        const canvasHeight = canvasRef.current.clientHeight;
+
+        if (contentWidth <= 0 || contentHeight <= 0 || canvasWidth <= 0 || canvasHeight <= 0) {
+            setTransform({ x: 0, y: 0, scale: 1 });
+            return;
+        }
+        
+        const scaleX = canvasWidth / (contentWidth + PADDING * 2);
+        const scaleY = canvasHeight / (contentHeight + PADDING * 2);
+        const newScale = Math.min(scaleX, scaleY, 1);
+
+        const newX = (canvasWidth - contentWidth * newScale) / 2 - minX * newScale;
+        const newY = (canvasHeight - contentHeight * newScale) / 2 - minY * newScale;
+
+        setTransform({ x: newX, y: newY, scale: newScale });
+    }, []);
+
     const screenToWorld = useCallback((screenX: number, screenY: number): Point => {
         if (!canvasRef.current) return { x: 0, y: 0 };
         const rect = canvasRef.current.getBoundingClientRect();
@@ -78,11 +118,34 @@ const CanvasComponent: React.ForwardRefRenderFunction<HTMLDivElement, CanvasProp
         return { x: worldX, y: worldY };
     }, [transform]);
 
+    useImperativeHandle(ref, () => ({
+        addElementAtCenter: (type: ElementType) => {
+            if (!canvasRef.current) return;
+            const rect = canvasRef.current.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            const worldPos = screenToWorld(centerX, centerY);
+            const config = ELEMENT_CONFIG[type];
+            const newElement: ElementData = {
+                id: `el_${Date.now()}`,
+                type,
+                name: config.defaultName,
+                x: worldPos.x - (config.defaultWidth || ELEMENT_DIMENSIONS.width) / 2,
+                y: worldPos.y - (config.defaultHeight || ELEMENT_DIMENSIONS.height) / 2,
+            };
+            if(config.defaultWidth) newElement.width = config.defaultWidth;
+            if(config.defaultHeight) newElement.height = config.defaultHeight;
+
+            setElements(prev => [...prev, newElement]);
+            setSelectedElementId(newElement.id);
+        }
+    }), [screenToWorld, setElements]);
+
     const handlePointerMove = useCallback((e: MouseEvent | TouchEvent) => {
         const isTouch = 'touches' in e;
         if (isTouch) e.preventDefault();
         
-        // --- Pinch-to-Zoom ---
         if (isTouch && e.touches.length === 2 && pinchState.current) {
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -359,11 +422,11 @@ const CanvasComponent: React.ForwardRefRenderFunction<HTMLDivElement, CanvasProp
                 backgroundSize: `${20 * transform.scale}px ${20 * transform.scale}px`,
                 backgroundPosition: `${transform.x}px ${transform.y}px`,
                 cursor: getCursor(),
-                touchAction: 'none' // Essential for mobile to prevent browser gestures
+                touchAction: 'none'
             }}
         >
             <div
-                ref={ref}
+                ref={exportRef}
                 className="absolute top-0 left-0"
                 style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, transformOrigin: '0 0' }}
             >
@@ -394,9 +457,12 @@ const CanvasComponent: React.ForwardRefRenderFunction<HTMLDivElement, CanvasProp
                             const fromEl = elements.find(el => el.id === conn.from);
                             const toEl = elements.find(el => el.id === conn.to);
                             if (!fromEl || !toEl) return null;
+
+                            const getElWidth = (el: ElementData) => el.width || ELEMENT_CONFIG[el.type].defaultWidth || ELEMENT_DIMENSIONS.width;
+                            const getElHeight = (el: ElementData) => el.height || ELEMENT_CONFIG[el.type].defaultHeight || ELEMENT_DIMENSIONS.height;
                             
-                            const toCenter = { x: toEl.x + (toEl.width || ELEMENT_DIMENSIONS.width) / 2, y: toEl.y + (toEl.height || ELEMENT_DIMENSIONS.height) / 2 };
-                            const fromCenter = { x: fromEl.x + (fromEl.width || ELEMENT_DIMENSIONS.width) / 2, y: fromEl.y + (fromEl.height || ELEMENT_DIMENSIONS.height) / 2 };
+                            const toCenter = { x: toEl.x + getElWidth(toEl) / 2, y: toEl.y + getElHeight(toEl) / 2 };
+                            const fromCenter = { x: fromEl.x + getElWidth(fromEl) / 2, y: fromEl.y + getElHeight(fromEl) / 2 };
                             
                             const startPoint = getAttachmentPoint(fromEl, toCenter);
                             const endPoint = getAttachmentPoint(toEl, fromCenter);
