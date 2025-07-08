@@ -1,22 +1,31 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas, CanvasHandle } from './components/Canvas';
 import { ElementData, ConnectorData, DiagramData, ElementType } from './types';
 import { ELEMENT_CONFIG, ELEMENT_DIMENSIONS } from './constants';
-import { HamburgerIcon, TrashIcon } from './components/Icons';
+import { HamburgerIcon, TrashIcon, UndoIcon } from './components/Icons';
 import { ExamplesModal } from './components/ExamplesModal';
 import { AddComponentButton } from './components/AddComponentButton';
 import { useMediaQuery } from './hooks/useMediaQuery';
+import { useHistory } from './hooks/useHistory';
 
 declare const htmlToImage: any;
 
-function App() {
-  const [elements, setElements] = useState<ElementData[]>([]);
-  const [connectors, setConnectors] = useState<ConnectorData[]>([]);
+export const App: React.FC = () => {
+  const { 
+    state: diagram, 
+    set: setDiagram, 
+    undo, 
+    redo, 
+    reset: resetDiagram,
+    canUndo,
+    canRedo
+  } = useHistory<DiagramData>({ elements: [], connectors: [] });
+  
+  const { elements, connectors } = diagram;
+  
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
   const [isExamplesModalOpen, setIsExamplesModalOpen] = useState(false);
-  const [canvasKey, setCanvasKey] = useState(Date.now());
   
   const canvasContentRef = useRef<HTMLDivElement>(null);
   const canvasHandleRef = useRef<CanvasHandle>(null);
@@ -33,31 +42,59 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = useCallback(() => {
     if (selectedElementIds.length === 0) return;
-    const idsToDelete = new Set(selectedElementIds);
-    setElements(prev => prev.filter(el => !idsToDelete.has(el.id)));
-    setConnectors(prev => prev.filter(conn => !idsToDelete.has(conn.from) && !idsToDelete.has(conn.to)));
-    setSelectedElementIds([]);
-  }
 
-  // Centralized keyboard delete logic
+    setDiagram(currentDiagram => {
+        const idsToDelete = new Set(selectedElementIds);
+        const newElements = currentDiagram.elements.filter(el => !idsToDelete.has(el.id));
+        const newConnectors = currentDiagram.connectors.filter(conn => !idsToDelete.has(conn.from) && !idsToDelete.has(conn.to));
+        return { elements: newElements, connectors: newConnectors };
+    });
+
+    setSelectedElementIds([]);
+  }, [selectedElementIds, setDiagram]);
+
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementIds.length > 0) {
-            // Do not delete if user is typing in an input
-            if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                return;
-            }
-            handleDeleteSelected();
-        }
+      if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        return;
+      }
+
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const isUndo = (isMac ? e.metaKey : e.ctrlKey) && e.key === 'z' && !e.shiftKey;
+      const isRedo = (isMac ? e.metaKey : e.ctrlKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey));
+
+      if (isUndo) {
+        e.preventDefault();
+        if (canUndo) undo();
+      } else if (isRedo) {
+        e.preventDefault();
+        if (canRedo) redo();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementIds.length > 0) {
+        e.preventDefault();
+        handleDeleteSelected();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-        window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedElementIds, elements, connectors]); // Add dependencies
+  }, [undo, redo, canUndo, canRedo, selectedElementIds, handleDeleteSelected]);
+
+  useEffect(() => {
+    // This effect reconciles the selection state if the underlying elements change (e.g., after an undo/redo).
+    if (selectedElementIds.length === 0) return;
+    
+    const elementIds = new Set(diagram.elements.map(el => el.id));
+    const validSelectedIds = selectedElementIds.filter(id => elementIds.has(id));
+
+    if (validSelectedIds.length !== selectedElementIds.length) {
+        setSelectedElementIds(validSelectedIds);
+    }
+}, [diagram.elements, selectedElementIds]);
 
   const downloadFile = (filename: string, data: string, type: string) => {
       const blob = new Blob([data], { type });
@@ -119,19 +156,17 @@ function App() {
     downloadFile('diagram.json', jsonString, 'application/json');
   };
 
-  const loadDiagram = (data: any): boolean => {
+  const loadDiagram = useCallback((data: any): boolean => {
     if (typeof data !== 'object' || data === null || !Array.isArray(data.elements) || !Array.isArray(data.connectors)) {
         console.error('Invalid file format. The file must be a JSON object with "elements" and "connectors" arrays.');
         return false;
     }
-    const diagram: DiagramData = data;
+    const diagramData: DiagramData = data;
 
-    setElements(diagram.elements);
-    setConnectors(diagram.connectors);
+    resetDiagram(diagramData);
     setSelectedElementIds([]); // Clear selection when loading new diagram
-    setCanvasKey(Date.now());
     return true;
-  }
+  }, [resetDiagram]);
 
   const handleImportJson = () => {
     setIsMainMenuOpen(false);
@@ -159,7 +194,7 @@ function App() {
     input.click();
   };
   
-  const handleLoadExample = async (path: string) => {
+  const handleLoadExample = useCallback(async (path: string) => {
     try {
       const response = await fetch(path);
       if (!response.ok) {
@@ -173,16 +208,16 @@ function App() {
       console.error(`Error loading example: ${err instanceof Error ? err.message : 'Unknown error'}`);
       throw err;
     }
-  };
+  }, [loadDiagram]);
 
   const handleOpenExamples = () => {
     setIsMainMenuOpen(false);
     setIsExamplesModalOpen(true);
   };
 
-  const handleAddComponent = (type: ElementType) => {
+  const handleAddComponent = useCallback((type: ElementType) => {
       canvasHandleRef.current?.addElementAtCenter(type);
-  };
+  }, []);
 
   return (
     <div className="flex flex-col h-screen font-sans bg-white text-gray-800">
@@ -223,13 +258,11 @@ function App() {
         <div className="flex flex-grow overflow-hidden relative">
             <main className="flex-grow p-4 flex">
               <Canvas
-                  key={canvasKey}
+                  key={diagram.elements[0]?.id || 1}
                   ref={canvasHandleRef}
                   exportRef={canvasContentRef}
-                  elements={elements}
-                  setElements={setElements}
-                  connectors={connectors}
-                  setConnectors={setConnectors}
+                  diagram={diagram}
+                  setDiagram={setDiagram}
                   selectedElementIds={selectedElementIds}
                   setSelectedElementIds={setSelectedElementIds}
               />
@@ -237,12 +270,22 @@ function App() {
 
             {/* Action buttons container */}
             <div className="fixed bottom-8 left-8 z-30 flex items-end gap-4">
-                {/* Add Component Button now lives inside this positioned flex container */}
-                <div>
+                {/* A stack for Undo and Add buttons */}
+                <div className="flex flex-col-reverse items-center gap-4">
                     <AddComponentButton onAddComponent={handleAddComponent} />
+                    {/* Undo Button */}
+                    {isMobile && canUndo && (
+                        <button
+                            onClick={undo}
+                            className="w-14 h-14 rounded-full bg-gray-700 hover:bg-gray-800 text-white flex items-center justify-center shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-500 transition-all duration-300 ease-in-out transform hover:scale-110 motion-safe:animate-delete-button-pop-in"
+                            aria-label="Undo last action"
+                        >
+                            <UndoIcon />
+                        </button>
+                    )}
                 </div>
                 
-                {/* Delete Button appears next to it on mobile when items are selected */}
+                {/* Delete Button appears next to the Add/Undo stack on mobile when items are selected */}
                 {isMobile && selectedElementIds.length > 0 && (
                     <button
                         onClick={handleDeleteSelected}
@@ -262,5 +305,3 @@ function App() {
     </div>
   );
 }
-
-export default App;

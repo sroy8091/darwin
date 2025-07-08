@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { ElementData, ConnectorData, ElementType, Point } from '../types';
+import { ElementData, ConnectorData, ElementType, Point, DiagramData } from '../types';
 import { ELEMENT_CONFIG, ELEMENT_DIMENSIONS } from '../constants';
 import { Element } from './Element';
 import { ConnectorLine } from './ConnectorLine';
@@ -13,10 +13,8 @@ export interface CanvasHandle {
 }
 
 interface CanvasProps {
-    elements: ElementData[];
-    setElements: React.Dispatch<React.SetStateAction<ElementData[]>>;
-    connectors: ConnectorData[];
-    setConnectors: React.Dispatch<React.SetStateAction<ConnectorData[]>>;
+    diagram: DiagramData;
+    setDiagram: (updater: React.SetStateAction<DiagramData>) => void;
     selectedElementIds: string[];
     setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
     exportRef: React.RefObject<HTMLDivElement>;
@@ -66,9 +64,21 @@ const getAttachmentPoint = (el: ElementData, targetCenter: Point): Point => {
 };
 
 const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps> = (
-    { elements, setElements, connectors, setConnectors, selectedElementIds, setSelectedElementIds, exportRef },
+    { diagram: propDiagram, setDiagram, selectedElementIds, setSelectedElementIds, exportRef },
     ref
 ) => {
+    const [localDiagram, setLocalDiagram] = useState(propDiagram);
+    const localDiagramRef = useRef(localDiagram);
+    localDiagramRef.current = localDiagram;
+    
+    useEffect(() => {
+        if (JSON.stringify(localDiagram) !== JSON.stringify(propDiagram)) {
+            setLocalDiagram(propDiagram);
+        }
+    }, [propDiagram]);
+    
+    const { elements, connectors } = localDiagram;
+
     const canvasRef = useRef<HTMLDivElement>(null);
     const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 });
     const [isPanning, setIsPanning] = useState(false);
@@ -85,7 +95,6 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
     const pressTimerRef = useRef<number | null>(null);
     const touchDownTargetRef = useRef<{ id: string, pointerPos: Point } | null>(null);
 
-    // Auto-frame the diagram on initial load.
     useLayoutEffect(() => {
         if (elements.length === 0 || !canvasRef.current) return;
 
@@ -118,7 +127,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         const newY = (canvasHeight - contentHeight * newScale) / 2 - minY * newScale;
 
         setTransform({ x: newX, y: newY, scale: newScale });
-    }, []);
+    }, [elements.length > 0 ? elements[0].id : null]); // Re-frame when diagram changes significantly
 
     const screenToWorld = useCallback((screenX: number, screenY: number): Point => {
         if (!canvasRef.current) return { x: 0, y: 0 };
@@ -147,10 +156,10 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             if(config.defaultWidth) newElement.width = config.defaultWidth;
             if(config.defaultHeight) newElement.height = config.defaultHeight;
 
-            setElements(prev => [...prev, newElement]);
+            setDiagram(d => ({ ...d, elements: [...d.elements, newElement]}));
             setSelectedElementIds([newElement.id]);
         }
-    }), [screenToWorld, setElements, setSelectedElementIds]);
+    }), [screenToWorld, setDiagram, setSelectedElementIds]);
 
     const startDrag = useCallback((elementId: string, pointerPos: Point) => {
         const targetElement = elements.find(el => el.id === elementId);
@@ -223,34 +232,36 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             const dx = (currentPointerPosition.x - draggingElement.initialPointerPos.x) / transform.scale;
             const dy = (currentPointerPosition.y - draggingElement.initialPointerPos.y) / transform.scale;
             const draggedIds = new Set(draggingElement.initialElementsPos.map(p => p.id));
-            setElements(prev => prev.map(el => {
-                if (!draggedIds.has(el.id)) {
-                    return el;
-                }
+            
+            setLocalDiagram(d => ({ ...d, elements: d.elements.map(el => {
+                if (!draggedIds.has(el.id)) return el;
                 const initialPos = draggingElement.initialElementsPos.find(p => p.id === el.id);
                 if (!initialPos) return el;
-                
-                return {
-                    ...el,
-                    x: initialPos.x + dx,
-                    y: initialPos.y + dy,
-                };
-            }));
+                return { ...el, x: initialPos.x + dx, y: initialPos.y + dy };
+            })}));
+
         } else if (resizingElement) {
             const dx = (currentPointerPosition.x - resizingElement.initialPointerPos.x) / transform.scale;
             const dy = (currentPointerPosition.y - resizingElement.initialPointerPos.y) / transform.scale;
             const newWidth = Math.max(80, resizingElement.initialSize.width + dx);
             const newHeight = Math.max(40, resizingElement.initialSize.height + dy);
-            setElements(prev => prev.map(el => el.id === resizingElement.id ? { ...el, width: newWidth, height: newHeight } : el));
-        }
-        else if (connecting) {
+
+            setLocalDiagram(d => ({ ...d, elements: d.elements.map(el => 
+                el.id === resizingElement.id ? { ...el, width: newWidth, height: newHeight } : el
+            )}));
+
+        } else if (connecting) {
             setConnecting(c => c ? { ...c, toPoint: screenToWorld(pointer.clientX, pointer.clientY) } : null);
         }
 
         lastPointerPosition.current = currentPointerPosition;
-    }, [isPanning, draggingElement, resizingElement, connecting, transform, setElements, screenToWorld, selectionBox, isMobile, startDrag]);
+    }, [isPanning, draggingElement, resizingElement, connecting, transform, screenToWorld, selectionBox, isMobile, startDrag]);
 
     const handlePointerUp = useCallback((e: MouseEvent | TouchEvent) => {
+        if (draggingElement || resizingElement) {
+            setDiagram(localDiagramRef.current);
+        }
+
         if (isMobile && pressTimerRef.current) {
             clearTimeout(pressTimerRef.current);
             pressTimerRef.current = null;
@@ -285,7 +296,6 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                         maxX: el.x + getElWidth(el),
                         maxY: el.y + getElHeight(el),
                     };
-                    // Check for overlap
                     return elRect.minX < selectionRect.maxX &&
                            elRect.maxX > selectionRect.minX &&
                            elRect.minY < selectionRect.maxY &&
@@ -312,7 +322,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                     const newConnector: ConnectorData = { id: `conn_${Date.now()}`, from: connecting.fromId, to: toId };
                     const alreadyExists = connectors.some(conn => (conn.from === newConnector.from && conn.to === newConnector.to));
                     if (!alreadyExists) {
-                        setConnectors(prev => [...prev, newConnector]);
+                        setDiagram(d => ({ ...d, connectors: [...d.connectors, newConnector] }));
                     }
                 }
             }
@@ -323,7 +333,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         setResizingElement(null);
         setConnecting(null);
         pinchState.current = null;
-    }, [connecting, connectors, setConnectors, selectionBox, elements, isMobile, selectedElementIds, setSelectedElementIds]);
+    }, [connecting, connectors, setDiagram, selectionBox, elements, isMobile, selectedElementIds, setSelectedElementIds, draggingElement, resizingElement]);
 
     const handleCanvasPointerDown = (e: React.MouseEvent | React.TouchEvent) => {
         const isTouch = 'touches' in e.nativeEvent;
@@ -409,9 +419,8 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         return () => {
             currentCanvas.removeEventListener('hld-drop', handleCustomDrop);
         };
-    }, [screenToWorld, setElements]);
+    }, [screenToWorld, setDiagram]);
     
-    // Handle spacebar press for multi-selection
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === ' ' && !e.repeat) {
@@ -435,7 +444,6 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         };
     }, []);
 
-    // Close info panel on outside click
     useEffect(() => {
         if (!isInfoVisible) return;
 
@@ -493,7 +501,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             if(config.defaultWidth) newElement.width = config.defaultWidth;
             if(config.defaultHeight) newElement.height = config.defaultHeight;
 
-            setElements(prev => [...prev, newElement]);
+            setDiagram(d => ({ ...d, elements: [...d.elements, newElement] }));
             setSelectedElementIds([newElement.id]);
         }
     };
@@ -546,8 +554,11 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
     };
 
     const handleRename = useCallback((id: string, newName: string) => {
-        setElements(prev => prev.map(el => el.id === id ? { ...el, name: newName } : el));
-    }, [setElements]);
+        setDiagram(d => ({
+            ...d,
+            elements: d.elements.map(el => (el.id === id ? { ...el, name: newName } : el))
+        }));
+    }, [setDiagram]);
 
     const handleStartConnection = useCallback((e: React.MouseEvent | React.TouchEvent, fromId: string) => {
         const fromEl = elements.find(el => el.id === fromId);
@@ -697,6 +708,8 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                         <p><b>Tap Element (Mobile):</b> Toggle Select</p>
                         <p><b>Long Press (Mobile):</b> Drag</p>
                         <p><b>Click/Tap Element + Delete:</b> Remove</p>
+                        <p><b>Cmd/Ctrl + Z:</b> Undo</p>
+                        <p><b>Cmd/Ctrl + Y:</b> Redo</p>
                     </div>
                 </div>
             </div>
