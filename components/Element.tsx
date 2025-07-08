@@ -9,9 +9,10 @@ interface ElementProps {
   onStartConnection: (event: React.MouseEvent | React.TouchEvent, id: string) => void;
   onPointerDown: (event: React.MouseEvent | React.TouchEvent) => void;
   isSelected?: boolean;
+  isSpacePressed?: boolean;
 }
 
-export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnection, onPointerDown, isSelected }) => {
+export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnection, onPointerDown, isSelected, isSpacePressed }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(data.name);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -77,6 +78,8 @@ export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnect
     onStartConnection(e, id);
   }
 
+  const cursorClass = isSpacePressed ? 'cursor-crosshair' : (isTextBox ? 'cursor-text' : 'cursor-grab');
+
   return (
     <div
       style={{
@@ -85,7 +88,7 @@ export const Element: React.FC<ElementProps> = ({ data, onRename, onStartConnect
         width: width,
         height: height,
       }}
-      className={`absolute select-none rounded-lg shadow-md border-2 transition-shadow duration-200 ${isTextBox ? 'cursor-text' : 'cursor-grab'} ${config.color} ${config.textColor} ${selectionClasses} active:cursor-grabbing`}
+      className={`absolute select-none rounded-lg shadow-md border-2 transition-shadow duration-200 ${cursorClass} ${config.color} ${config.textColor} ${selectionClasses} active:cursor-grabbing`}
       onDoubleClick={handleDoubleClick}
       onMouseDown={onPointerDown}
       onTouchStart={onPointerDown}
