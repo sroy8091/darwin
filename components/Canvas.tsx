@@ -209,7 +209,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         if (!pointer) return;
         const currentPointerPosition = { x: pointer.clientX, y: pointer.clientY };
 
-        if (isMobile && pressTimerRef.current && touchDownTargetRef.current) {
+        if (pressTimerRef.current && touchDownTargetRef.current) {
             const dx = currentPointerPosition.x - touchDownTargetRef.current.pointerPos.x;
             const dy = currentPointerPosition.y - touchDownTargetRef.current.pointerPos.y;
             if (Math.sqrt(dx * dx + dy * dy) > 10) { // Drag threshold
@@ -262,7 +262,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             setDiagram(localDiagramRef.current);
         }
 
-        if (isMobile && pressTimerRef.current) {
+        if (pressTimerRef.current) {
             clearTimeout(pressTimerRef.current);
             pressTimerRef.current = null;
             if (touchDownTargetRef.current) {
@@ -531,7 +531,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
              return;
         }
 
-        if (isMobile) {
+        if (isTouch) {
             touchDownTargetRef.current = { id, pointerPos: { x: pointer.clientX, y: pointer.clientY } };
             pressTimerRef.current = window.setTimeout(() => {
                 startDrag(id, { x: pointer.clientX, y: pointer.clientY });
@@ -705,8 +705,8 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                         <p><b>Drag Canvas:</b> Pan</p>
                         <p><b>Hold Space + Drag:</b> Area Select</p>
                         <p><b>Hold Space + Click Element:</b> Multi-select</p>
-                        <p><b>Tap Element (Mobile):</b> Toggle Select</p>
-                        <p><b>Long Press (Mobile):</b> Drag</p>
+                        <p><b>Tap Element (Touch):</b> Toggle Select</p>
+                        <p><b>Long Press (Touch):</b> Drag</p>
                         <p><b>Click/Tap Element + Delete:</b> Remove</p>
                         <p><b>Cmd/Ctrl + Z:</b> Undo</p>
                         <p><b>Cmd/Ctrl + Y:</b> Redo</p>
