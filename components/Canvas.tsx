@@ -1,11 +1,10 @@
-
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { ElementData, ConnectorData, ElementType, Point, DiagramData } from '../types';
 import { ELEMENT_CONFIG, ELEMENT_DIMENSIONS } from '../constants';
 import { Element } from './Element';
 import { ConnectorLine } from './ConnectorLine';
-import { InfoIcon } from './Icons';
-import { useMediaQuery } from '../hooks/useMediaQuery';
+import { InfoIcon } from "./Icons";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 
 
 export interface CanvasHandle {
@@ -584,8 +583,8 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             ref={canvasRef}
             className="flex-grow relative bg-gray-50 rounded-lg shadow-inner overflow-hidden"
             onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e)}
-            onWheel={handleWheel}
+            onDrop={(e: React.DragEvent<HTMLDivElement>) => handleDrop(e)}
+            onWheel={(e: React.WheelEvent<HTMLDivElement>) => handleWheel(e)}
             onMouseDown={handleCanvasPointerDown}
             onTouchStart={handleCanvasPointerDown}
             style={{ 
@@ -677,29 +676,38 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                     />
                 ))}
             </div>
-             <div className="absolute bottom-4 right-4 z-10 export-ignore info-container">
+            <div
+                className="fixed bottom-4 right-4 z-50 bg-white rounded-full shadow p-1 cursor-pointer export-ignore info-container md:bottom-6 md:right-6"
+                style={{
+                    maxWidth: 'calc(100vw - 1rem)',
+                    maxHeight: 'calc(100vh - 1rem)',
+                }}
+            >
                 <div className="relative">
                     <button
-                        onClick={(e) => {
+                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                             if (isInfoVisible) {
                                 e.currentTarget.blur();
                             }
-                            setIsInfoVisible(v => !v);
+                            setIsInfoVisible((v: boolean) => !v);
                         }}
                         aria-expanded={isInfoVisible}
                         aria-controls="info-panel"
-                        className="relative w-10 h-10 rounded-full bg-gray-800 text-white flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-[0_0_15px_rgba(6,182,212,0.6)] transition-shadow hover:shadow-[0_0_20px_rgba(6,182,212,0.8)]"
+                        className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-800 text-white flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-[0_0_15px_rgba(6,182,212,0.6)] transition-shadow hover:shadow-[0_0_20px_rgba(6,182,212,0.8)]"
                         aria-label="Show controls info"
                     >
                         <InfoIcon />
                     </button>
                     <div 
                         id="info-panel"
-                        className={`absolute bottom-full right-0 mb-2 w-max bg-gray-800 text-white text-xs rounded px-3 py-2 shadow-lg transition-all duration-300 ease-out ${
+                        className={`absolute bottom-full right-0 sm:mb-2 mb-1 w-max max-w-[calc(100vw-2.5rem)] sm:max-w-none bg-gray-800 text-white text-xs rounded px-2 sm:px-3 py-2 shadow-lg transition-all duration-300 ease-out ${
                             isInfoVisible 
                                 ? 'opacity-95 translate-y-0' 
                                 : 'opacity-0 translate-y-2 pointer-events-none'
                         }`}
+                        style={{
+                            wordBreak: 'break-word',
+                        }}
                     >
                         <p><b>Scroll/Pinch:</b> Zoom</p>
                         <p><b>Drag Canvas:</b> Pan</p>
