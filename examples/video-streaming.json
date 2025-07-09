@@ -1,0 +1,42 @@
+
+{
+  "elements": [
+    { "id": "el_vs_user", "type": "USER", "name": "User", "x": 650, "y": 50 },
+    { "id": "el_vs_web", "type": "WEB_CLIENT", "name": "Web/TV Client", "x": 350, "y": 150 },
+    { "id": "el_vs_mobile", "type": "MOBILE_CLIENT", "name": "Mobile Client", "x": 950, "y": 150 },
+    { "id": "el_vs_cdn", "type": "CDN", "name": "CDN / Blob Storage", "x": 650, "y": 280, "width": 200, "height": 70 },
+    { "id": "el_vs_apigw", "type": "API_GATEWAY", "name": "API Gateway", "x": 650, "y": 450 },
+    { "id": "el_vs_lb", "type": "LOAD_BALANCER", "name": "API Load Balancer", "x": 650, "y": 550 },
+    { "id": "el_vs_usersvc", "type": "MICROSERVICE", "name": "User Service", "x": 100, "y": 680 },
+    { "id": "el_vs_metadatasvc", "type": "MICROSERVICE", "name": "Metadata Service", "x": 400, "y": 680 },
+    { "id": "el_vs_streamsvc", "type": "MICROSERVICE", "name": "Streaming Service", "x": 700, "y": 680 },
+    { "id": "el_vs_uploadsvc", "type": "MICROSERVICE", "name": "Upload Service", "x": 1000, "y": 680 },
+    { "id": "el_vs_userdb", "type": "DATABASE", "name": "User DB", "x": 100, "y": 820 },
+    { "id": "el_vs_metadatadb", "type": "DATABASE", "name": "Video Metadata DB", "x": 400, "y": 820 },
+    { "id": "el_vs_cache", "type": "CACHE", "name": "Metadata Cache", "x": 550, "y": 820 },
+    { "id": "el_vs_queue", "type": "MESSAGE_QUEUE", "name": "Processing Queue", "x": 1000, "y": 820 },
+    { "id": "el_vs_transcoder", "type": "MICROSERVICE", "name": "Video Transcoder", "x": 1250, "y": 820 }
+  ],
+  "connectors": [
+    { "id": "conn_vs_1", "from": "el_vs_user", "to": "el_vs_web" },
+    { "id": "conn_vs_2", "from": "el_vs_user", "to": "el_vs_mobile" },
+    { "id": "conn_vs_3", "from": "el_vs_web", "to": "el_vs_apigw" },
+    { "id": "conn_vs_4", "from": "el_vs_mobile", "to": "el_vs_apigw" },
+    { "id": "conn_vs_5", "from": "el_vs_web", "to": "el_vs_cdn" },
+    { "id": "conn_vs_6", "from": "el_vs_mobile", "to": "el_vs_cdn" },
+    { "id": "conn_vs_7", "from": "el_vs_apigw", "to": "el_vs_lb" },
+    { "id": "conn_vs_8", "from": "el_vs_lb", "to": "el_vs_usersvc" },
+    { "id": "conn_vs_9", "from": "el_vs_lb", "to": "el_vs_metadatasvc" },
+    { "id": "conn_vs_10", "from": "el_vs_lb", "to": "el_vs_streamsvc" },
+    { "id": "conn_vs_11", "from": "el_vs_lb", "to": "el_vs_uploadsvc" },
+    { "id": "conn_vs_12", "from": "el_vs_usersvc", "to": "el_vs_userdb" },
+    { "id": "conn_vs_13", "from": "el_vs_metadatasvc", "to": "el_vs_metadatadb" },
+    { "id": "conn_vs_14", "from": "el_vs_metadatasvc", "to": "el_vs_cache" },
+    { "id": "conn_vs_15", "from": "el_vs_streamsvc", "to": "el_vs_cdn" },
+    { "id": "conn_vs_16", "from": "el_vs_uploadsvc", "to": "el_vs_cdn" },
+    { "id": "conn_vs_17", "from": "el_vs_uploadsvc", "to": "el_vs_queue" },
+    { "id": "conn_vs_18", "from": "el_vs_queue", "to": "el_vs_transcoder" },
+    { "id": "conn_vs_19", "from": "el_vs_transcoder", "to": "el_vs_cdn" },
+    { "id": "conn_vs_20", "from": "el_vs_transcoder", "to": "el_vs_metadatadb" }
+  ]
+}

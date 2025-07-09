@@ -1,0 +1,32 @@
+
+{
+  "elements": [
+    { "id": "el_user", "type": "USER", "name": "User", "x": 550, "y": 50, "width": 160, "height": 60 },
+    { "id": "el_web", "type": "WEB_CLIENT", "name": "Web Client", "x": 300, "y": 150, "width": 160, "height": 60 },
+    { "id": "el_mobile", "type": "MOBILE_CLIENT", "name": "Mobile Client", "x": 800, "y": 150, "width": 160, "height": 60 },
+    { "id": "el_apigw", "type": "API_GATEWAY", "name": "API Gateway", "x": 550, "y": 250, "width": 160, "height": 60 },
+    { "id": "el_lb", "type": "LOAD_BALANCER", "name": "API Load Balancer", "x": 550, "y": 350, "width": 160, "height": 60 },
+    { "id": "el_usersvc", "type": "MICROSERVICE", "name": "User Service", "x": 100, "y": 450, "width": 160, "height": 60 },
+    { "id": "el_tweetsvc", "type": "MICROSERVICE", "name": "Tweet Service", "x": 550, "y": 450, "width": 160, "height": 60 },
+    { "id": "el_feedsvc", "type": "MICROSERVICE", "name": "Feed Service", "x": 1000, "y": 450, "width": 160, "height": 60 },
+    { "id": "el_queue", "type": "MESSAGE_QUEUE", "name": "Fan-out Queue", "x": 800, "y": 550, "width": 160, "height": 60 },
+    { "id": "el_cache", "type": "CACHE", "name": "Timeline Cache (Redis)", "x": 1000, "y": 650, "width": 180, "height": 60 },
+    { "id": "el_userdb", "type": "DATABASE", "name": "User DB (Postgres)", "x": 100, "y": 650, "width": 180, "height": 60 },
+    { "id": "el_tweetdb", "type": "DATABASE", "name": "Tweet DB (Cassandra)", "x": 550, "y": 650, "width": 180, "height": 60 }
+  ],
+  "connectors": [
+    { "id": "conn_1", "from": "el_user", "to": "el_web" },
+    { "id": "conn_2", "from": "el_user", "to": "el_mobile" },
+    { "id": "conn_3", "from": "el_web", "to": "el_apigw" },
+    { "id": "conn_4", "from": "el_mobile", "to": "el_apigw" },
+    { "id": "conn_5", "from": "el_apigw", "to": "el_lb" },
+    { "id": "conn_6", "from": "el_lb", "to": "el_usersvc" },
+    { "id": "conn_7", "from": "el_lb", "to": "el_tweetsvc" },
+    { "id": "conn_8", "from": "el_lb", "to": "el_feedsvc" },
+    { "id": "conn_9", "from": "el_usersvc", "to": "el_userdb" },
+    { "id": "conn_10", "from": "el_tweetsvc", "to": "el_tweetdb" },
+    { "id": "conn_11", "from": "el_tweetsvc", "to": "el_queue" },
+    { "id": "conn_12", "from": "el_queue", "to": "el_feedsvc" },
+    { "id": "conn_13", "from": "el_feedsvc", "to": "el_cache" }
+  ]
+}
