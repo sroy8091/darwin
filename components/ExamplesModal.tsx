@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { exampleMetas } from '@/examples';
+import { exampleMetas } from '../examples';
 import { ExampleMeta } from '../types';
 import { CloseIcon } from './Icons';
 

@@ -3,15 +3,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Canvas, CanvasHandle } from './components/Canvas';
 import { ElementData, ConnectorData, DiagramData, ElementType } from './types';
 import { ELEMENT_CONFIG, ELEMENT_DIMENSIONS } from './constants';
-import { HamburgerIcon } from './components/Icons';
+import { HamburgerIcon, TrashIcon } from './components/Icons';
 import { ExamplesModal } from './components/ExamplesModal';
 import { AddComponentButton } from './components/AddComponentButton';
+import { useMediaQuery } from './hooks/useMediaQuery';
 
 declare const htmlToImage: any;
 
 function App() {
   const [elements, setElements] = useState<ElementData[]>([]);
   const [connectors, setConnectors] = useState<ConnectorData[]>([]);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
   const [isExamplesModalOpen, setIsExamplesModalOpen] = useState(false);
   const [canvasKey, setCanvasKey] = useState(Date.now());
@@ -19,6 +21,7 @@ function App() {
   const canvasContentRef = useRef<HTMLDivElement>(null);
   const canvasHandleRef = useRef<CanvasHandle>(null);
   const mainMenuRef = useRef<HTMLDivElement>(null);
+  const isMobile = useMediaQuery('(max-width: 767px)');
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -29,6 +32,32 @@ function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleDeleteSelected = () => {
+    if (selectedElementIds.length === 0) return;
+    const idsToDelete = new Set(selectedElementIds);
+    setElements(prev => prev.filter(el => !idsToDelete.has(el.id)));
+    setConnectors(prev => prev.filter(conn => !idsToDelete.has(conn.from) && !idsToDelete.has(conn.to)));
+    setSelectedElementIds([]);
+  }
+
+  // Centralized keyboard delete logic
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementIds.length > 0) {
+            // Do not delete if user is typing in an input
+            if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                return;
+            }
+            handleDeleteSelected();
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedElementIds, elements, connectors]); // Add dependencies
 
   const downloadFile = (filename: string, data: string, type: string) => {
       const blob = new Blob([data], { type });
@@ -97,10 +126,9 @@ function App() {
     }
     const diagram: DiagramData = data;
 
-    console.log("Loading diagram. Imported element positions:", diagram.elements.map(el => ({ id: el.id, x: el.x, y: el.y })));
-
     setElements(diagram.elements);
     setConnectors(diagram.connectors);
+    setSelectedElementIds([]); // Clear selection when loading new diagram
     setCanvasKey(Date.now());
     return true;
   }
@@ -158,6 +186,15 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen font-sans bg-white text-gray-800">
+        <style>{`
+            @keyframes delete-button-pop-in {
+                from { opacity: 0; transform: scale(0.8); }
+                to { opacity: 1; transform: scale(1); }
+            }
+            .animate-delete-button-pop-in {
+                animation: delete-button-pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            }
+        `}</style>
         <header className="p-4 bg-white border-b border-gray-200 shadow-sm z-10 flex justify-between items-center">
              <div className="w-24"></div>
             <h1 className="text-2xl font-bold text-center text-cyan-700">Darwin</h1>
@@ -193,9 +230,29 @@ function App() {
                   setElements={setElements}
                   connectors={connectors}
                   setConnectors={setConnectors}
+                  selectedElementIds={selectedElementIds}
+                  setSelectedElementIds={setSelectedElementIds}
               />
             </main>
-            <AddComponentButton onAddComponent={handleAddComponent} />
+
+            {/* Action buttons container */}
+            <div className="fixed bottom-8 left-8 z-30 flex items-end gap-4">
+                {/* Add Component Button now lives inside this positioned flex container */}
+                <div>
+                    <AddComponentButton onAddComponent={handleAddComponent} />
+                </div>
+                
+                {/* Delete Button appears next to it on mobile when items are selected */}
+                {isMobile && selectedElementIds.length > 0 && (
+                    <button
+                        onClick={handleDeleteSelected}
+                        className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 transition-all duration-300 ease-in-out transform hover:scale-110 motion-safe:animate-delete-button-pop-in"
+                        aria-label="Delete selected components"
+                    >
+                        <TrashIcon />
+                    </button>
+                )}
+            </div>
         </div>
         <ExamplesModal 
           isOpen={isExamplesModalOpen}

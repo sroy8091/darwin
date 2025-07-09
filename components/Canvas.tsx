@@ -4,6 +4,9 @@ import { ElementData, ConnectorData, ElementType, Point } from '../types';
 import { ELEMENT_CONFIG, ELEMENT_DIMENSIONS } from '../constants';
 import { Element } from './Element';
 import { ConnectorLine } from './ConnectorLine';
+import { InfoIcon } from './Icons';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+
 
 export interface CanvasHandle {
     addElementAtCenter: (type: ElementType) => void;
@@ -14,6 +17,8 @@ interface CanvasProps {
     setElements: React.Dispatch<React.SetStateAction<ElementData[]>>;
     connectors: ConnectorData[];
     setConnectors: React.Dispatch<React.SetStateAction<ConnectorData[]>>;
+    selectedElementIds: string[];
+    setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
     exportRef: React.RefObject<HTMLDivElement>;
 }
 
@@ -23,14 +28,13 @@ interface Transform {
     scale: number;
 }
 
-interface DraggingElementInfo {
-    id: string;
-    initialElementPos: Point;
+interface DraggingElementsInfo {
+    initialElementsPos: { id: string; x: number; y: number; }[];
     initialPointerPos: Point;
 }
 
 interface ResizingElementInfo {
-    id: string;
+    id:string;
     initialSize: { width: number; height: number };
     initialPointerPos: Point;
 }
@@ -62,18 +66,24 @@ const getAttachmentPoint = (el: ElementData, targetCenter: Point): Point => {
 };
 
 const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps> = (
-    { elements, setElements, connectors, setConnectors, exportRef },
+    { elements, setElements, connectors, setConnectors, selectedElementIds, setSelectedElementIds, exportRef },
     ref
 ) => {
     const canvasRef = useRef<HTMLDivElement>(null);
     const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 });
     const [isPanning, setIsPanning] = useState(false);
-    const [draggingElement, setDraggingElement] = useState<DraggingElementInfo | null>(null);
+    const [draggingElement, setDraggingElement] = useState<DraggingElementsInfo | null>(null);
     const [resizingElement, setResizingElement] = useState<ResizingElementInfo | null>(null);
     const [connecting, setConnecting] = useState<{ fromId: string; toPoint: Point; } | null>(null);
-    const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+    const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const [isInfoVisible, setIsInfoVisible] = useState(false);
+    const [selectionBox, setSelectionBox] = useState<{ start: Point; end: Point; } | null>(null);
     const lastPointerPosition = useRef<Point>({ x: 0, y: 0 });
     const pinchState = useRef<PinchState | null>(null);
+
+    const isMobile = useMediaQuery('(max-width: 767px)');
+    const pressTimerRef = useRef<number | null>(null);
+    const touchDownTargetRef = useRef<{ id: string, pointerPos: Point } | null>(null);
 
     // Auto-frame the diagram on initial load.
     useLayoutEffect(() => {
@@ -138,9 +148,29 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             if(config.defaultHeight) newElement.height = config.defaultHeight;
 
             setElements(prev => [...prev, newElement]);
-            setSelectedElementId(newElement.id);
+            setSelectedElementIds([newElement.id]);
         }
-    }), [screenToWorld, setElements]);
+    }), [screenToWorld, setElements, setSelectedElementIds]);
+
+    const startDrag = useCallback((elementId: string, pointerPos: Point) => {
+        const targetElement = elements.find(el => el.id === elementId);
+        if (!targetElement) return;
+
+        const isSelected = selectedElementIds.includes(elementId);
+        let elementsToDrag: ElementData[];
+
+        if (!isSelected) {
+            setSelectedElementIds([elementId]);
+            elementsToDrag = [targetElement];
+        } else {
+            elementsToDrag = elements.filter(el => selectedElementIds.includes(el.id));
+        }
+
+        setDraggingElement({
+            initialElementsPos: elementsToDrag.map(el => ({ id: el.id, x: el.x, y: el.y })),
+            initialPointerPos: pointerPos,
+        });
+    }, [elements, selectedElementIds, setSelectedElementIds]);
 
     const handlePointerMove = useCallback((e: MouseEvent | TouchEvent) => {
         const isTouch = 'touches' in e;
@@ -169,6 +199,21 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         const pointer = isTouch ? (e.touches[0] || e.changedTouches[0]) : e;
         if (!pointer) return;
         const currentPointerPosition = { x: pointer.clientX, y: pointer.clientY };
+
+        if (isMobile && pressTimerRef.current && touchDownTargetRef.current) {
+            const dx = currentPointerPosition.x - touchDownTargetRef.current.pointerPos.x;
+            const dy = currentPointerPosition.y - touchDownTargetRef.current.pointerPos.y;
+            if (Math.sqrt(dx * dx + dy * dy) > 10) { // Drag threshold
+                clearTimeout(pressTimerRef.current);
+                pressTimerRef.current = null;
+                startDrag(touchDownTargetRef.current.id, touchDownTargetRef.current.pointerPos);
+            }
+        }
+
+        if (selectionBox) {
+            setSelectionBox(c => c ? { ...c, end: screenToWorld(pointer.clientX, pointer.clientY) } : null);
+            return;
+        }
         
         if (isPanning) {
             const dx = currentPointerPosition.x - lastPointerPosition.current.x;
@@ -177,9 +222,20 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         } else if (draggingElement) {
             const dx = (currentPointerPosition.x - draggingElement.initialPointerPos.x) / transform.scale;
             const dy = (currentPointerPosition.y - draggingElement.initialPointerPos.y) / transform.scale;
-            const newX = draggingElement.initialElementPos.x + dx;
-            const newY = draggingElement.initialElementPos.y + dy;
-            setElements(prev => prev.map(el => el.id === draggingElement.id ? { ...el, x: newX, y: newY } : el));
+            const draggedIds = new Set(draggingElement.initialElementsPos.map(p => p.id));
+            setElements(prev => prev.map(el => {
+                if (!draggedIds.has(el.id)) {
+                    return el;
+                }
+                const initialPos = draggingElement.initialElementsPos.find(p => p.id === el.id);
+                if (!initialPos) return el;
+                
+                return {
+                    ...el,
+                    x: initialPos.x + dx,
+                    y: initialPos.y + dy,
+                };
+            }));
         } else if (resizingElement) {
             const dx = (currentPointerPosition.x - resizingElement.initialPointerPos.x) / transform.scale;
             const dy = (currentPointerPosition.y - resizingElement.initialPointerPos.y) / transform.scale;
@@ -192,9 +248,55 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         }
 
         lastPointerPosition.current = currentPointerPosition;
-    }, [isPanning, draggingElement, resizingElement, connecting, transform, setElements, screenToWorld]);
+    }, [isPanning, draggingElement, resizingElement, connecting, transform, setElements, screenToWorld, selectionBox, isMobile, startDrag]);
 
     const handlePointerUp = useCallback((e: MouseEvent | TouchEvent) => {
+        if (isMobile && pressTimerRef.current) {
+            clearTimeout(pressTimerRef.current);
+            pressTimerRef.current = null;
+            if (touchDownTargetRef.current) {
+                const id = touchDownTargetRef.current.id;
+                const isCurrentlySelected = selectedElementIds.includes(id);
+                setSelectedElementIds(prev =>
+                    isCurrentlySelected
+                        ? prev.filter(selectedId => selectedId !== id)
+                        : [...prev, id]
+                );
+            }
+        }
+        touchDownTargetRef.current = null;
+
+        if (selectionBox) {
+            const { start, end } = selectionBox;
+            const selectionRect = {
+                minX: Math.min(start.x, end.x),
+                minY: Math.min(start.y, end.y),
+                maxX: Math.max(start.x, end.x),
+                maxY: Math.max(start.y, end.y),
+            };
+
+            const idsToSelect = elements
+                .filter(el => {
+                    const getElWidth = (el: ElementData) => el.width || ELEMENT_CONFIG[el.type].defaultWidth || ELEMENT_DIMENSIONS.width;
+                    const getElHeight = (el: ElementData) => el.height || ELEMENT_CONFIG[el.type].defaultHeight || ELEMENT_DIMENSIONS.height;
+                    const elRect = {
+                        minX: el.x,
+                        minY: el.y,
+                        maxX: el.x + getElWidth(el),
+                        maxY: el.y + getElHeight(el),
+                    };
+                    // Check for overlap
+                    return elRect.minX < selectionRect.maxX &&
+                           elRect.maxX > selectionRect.minX &&
+                           elRect.minY < selectionRect.maxY &&
+                           elRect.maxY > selectionRect.minY;
+                })
+                .map(el => el.id);
+            
+            setSelectedElementIds(idsToSelect);
+            setSelectionBox(null);
+        }
+
         if (connecting) {
             let targetElement: Element | null = null;
             if ('changedTouches' in e) {
@@ -221,7 +323,7 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         setResizingElement(null);
         setConnecting(null);
         pinchState.current = null;
-    }, [connecting, connectors, setConnectors]);
+    }, [connecting, connectors, setConnectors, selectionBox, elements, isMobile, selectedElementIds, setSelectedElementIds]);
 
     const handleCanvasPointerDown = (e: React.MouseEvent | React.TouchEvent) => {
         const isTouch = 'touches' in e.nativeEvent;
@@ -230,6 +332,10 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         if (isTouch) {
             const touchEvent = e as React.TouchEvent;
             if (touchEvent.touches.length === 2) {
+                if(pressTimerRef.current) clearTimeout(pressTimerRef.current);
+                pressTimerRef.current = null;
+                touchDownTargetRef.current = null;
+
                 const dx = touchEvent.touches[0].clientX - touchEvent.touches[1].clientX;
                 const dy = touchEvent.touches[0].clientY - touchEvent.touches[1].clientY;
                 pinchState.current = {
@@ -242,17 +348,27 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             }
         }
         
+        const pointer = isTouch ? (e as React.TouchEvent).touches[0] : (e as React.MouseEvent);
+        if(!pointer) return;
+
+        if (isSpacePressed && target === e.currentTarget) {
+            e.preventDefault();
+            e.stopPropagation();
+            const startPoint = screenToWorld(pointer.clientX, pointer.clientY);
+            setSelectionBox({ start: startPoint, end: startPoint });
+            return;
+        }
+
         if (target !== e.currentTarget) return; 
         
         if (e.target === e.currentTarget) {
-            setSelectedElementId(null);
+            setSelectedElementIds([]);
         }
         
         if (isTouch || (e as React.MouseEvent).button === 0 || (e as React.MouseEvent).button === 1) {
             e.preventDefault();
             e.stopPropagation();
             setIsPanning(true);
-            const pointer = isTouch ? (e as React.TouchEvent).touches[0] : (e as React.MouseEvent);
             lastPointerPosition.current = { x: pointer.clientX, y: pointer.clientY };
         }
     };
@@ -295,23 +411,46 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         };
     }, [screenToWorld, setElements]);
     
+    // Handle spacebar press for multi-selection
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) {
-                if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+            if (e.key === ' ' && !e.repeat) {
+                 if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
                     return;
                 }
-                setElements(prev => prev.filter(el => el.id !== selectedElementId));
-                setConnectors(prev => prev.filter(conn => conn.from !== selectedElementId && conn.to !== selectedElementId));
-                setSelectedElementId(null);
+                e.preventDefault();
+                setIsSpacePressed(true);
+            }
+        };
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.key === ' ') {
+                setIsSpacePressed(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, []);
+
+    // Close info panel on outside click
+    useEffect(() => {
+        if (!isInfoVisible) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement;
+            if (target.closest && !target.closest('.info-container')) {
+                setIsInfoVisible(false);
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('mousedown', handleClickOutside);
         return () => {
-            window.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [selectedElementId, setElements, setConnectors]);
+    }, [isInfoVisible]);
 
 
     const handleWheel = (e: React.WheelEvent) => {
@@ -355,36 +494,55 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
             if(config.defaultHeight) newElement.height = config.defaultHeight;
 
             setElements(prev => [...prev, newElement]);
-            setSelectedElementId(newElement.id);
+            setSelectedElementIds([newElement.id]);
         }
     };
     
     const handleElementPointerDown = (e: React.MouseEvent | React.TouchEvent, id: string) => {
-        e.stopPropagation(); 
-        setSelectedElementId(id);
-        
+        e.stopPropagation();
+        setIsPanning(false);
+
         const isTouch = 'touches' in e.nativeEvent;
         if (!isTouch && (e as React.MouseEvent).button !== 0) return;
-        
-        const element = elements.find(el => el.id === id);
-        if (!element) return;
 
+        const currentElement = elements.find(el => el.id === id);
+        if (!currentElement) return;
+
+        const isCurrentlySelected = selectedElementIds.includes(id);
         const pointer = isTouch ? (e as React.TouchEvent).touches[0] : (e as React.MouseEvent);
-
         const target = e.target as HTMLElement;
+
         if (target.dataset.resizeHandle) {
-             setResizingElement({
-                id,
-                initialSize: { width: element.width || ELEMENT_CONFIG[element.type].defaultWidth || ELEMENT_DIMENSIONS.width, height: element.height || ELEMENT_CONFIG[element.type].defaultHeight || ELEMENT_DIMENSIONS.height },
-                initialPointerPos: { x: pointer.clientX, y: pointer.clientY },
-            });
-        } else {
-            setDraggingElement({
-                id,
-                initialElementPos: { x: element.x, y: element.y },
-                initialPointerPos: { x: pointer.clientX, y: pointer.clientY },
-            });
+             if (selectedElementIds.length === 1 && isCurrentlySelected) {
+                 setResizingElement({
+                    id,
+                    initialSize: { width: currentElement.width || ELEMENT_CONFIG[currentElement.type].defaultWidth || ELEMENT_DIMENSIONS.width, height: currentElement.height || ELEMENT_CONFIG[currentElement.type].defaultHeight || ELEMENT_DIMENSIONS.height },
+                    initialPointerPos: { x: pointer.clientX, y: pointer.clientY },
+                });
+             }
+             return;
         }
+
+        if (isMobile) {
+            touchDownTargetRef.current = { id, pointerPos: { x: pointer.clientX, y: pointer.clientY } };
+            pressTimerRef.current = window.setTimeout(() => {
+                startDrag(id, { x: pointer.clientX, y: pointer.clientY });
+                pressTimerRef.current = null;
+                touchDownTargetRef.current = null;
+            }, 250); // Long press delay
+            return;
+        }
+
+        if (isSpacePressed) {
+            setSelectedElementIds(prev =>
+                isCurrentlySelected
+                    ? prev.filter(selectedId => selectedId !== id)
+                    : [...prev, id]
+            );
+            return; // Don't start a drag when multi-selecting
+        }
+        
+        startDrag(id, { x: pointer.clientX, y: pointer.clientY });
     };
 
     const handleRename = useCallback((id: string, newName: string) => {
@@ -402,6 +560,8 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
     }, [elements, screenToWorld]);
 
     const getCursor = () => {
+        if (selectionBox) return 'crosshair';
+        if (isSpacePressed) return 'crosshair';
         if (isPanning || draggingElement) return 'grabbing';
         if (resizingElement) return 'se-resize';
         if (connecting) return 'crosshair';
@@ -479,6 +639,21 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                     </g>
                 </svg>
 
+                {selectionBox && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: Math.min(selectionBox.start.x, selectionBox.end.x),
+                            top: Math.min(selectionBox.start.y, selectionBox.end.y),
+                            width: Math.abs(selectionBox.start.x - selectionBox.end.x),
+                            height: Math.abs(selectionBox.start.y - selectionBox.end.y),
+                            backgroundColor: 'rgba(8, 145, 178, 0.2)',
+                            border: '1px solid #0891b2',
+                            pointerEvents: 'none',
+                        }}
+                    />
+                )}
+
                 {elements.map(el => (
                     <Element
                         key={el.id}
@@ -486,14 +661,44 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                         onRename={handleRename}
                         onStartConnection={handleStartConnection}
                         onPointerDown={(e) => handleElementPointerDown(e, el.id)}
-                        isSelected={el.id === selectedElementId}
+                        isSelected={selectedElementIds.includes(el.id)}
+                        isSpacePressed={isSpacePressed}
                     />
                 ))}
             </div>
-             <div className="absolute bottom-4 right-4 bg-gray-800 text-white text-xs rounded px-3 py-2 opacity-80 shadow-lg pointer-events-none export-ignore">
-                <p><b>Scroll/Pinch:</b> Zoom</p>
-                <p><b>Drag Canvas:</b> Pan</p>
-                <p><b>Click/Tap Element + Delete:</b> Remove</p>
+             <div className="absolute bottom-4 right-4 z-10 export-ignore info-container">
+                <div className="relative">
+                    <button
+                        onClick={(e) => {
+                            if (isInfoVisible) {
+                                e.currentTarget.blur();
+                            }
+                            setIsInfoVisible(v => !v);
+                        }}
+                        aria-expanded={isInfoVisible}
+                        aria-controls="info-panel"
+                        className="relative w-10 h-10 rounded-full bg-gray-800 text-white flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-[0_0_15px_rgba(6,182,212,0.6)] transition-shadow hover:shadow-[0_0_20px_rgba(6,182,212,0.8)]"
+                        aria-label="Show controls info"
+                    >
+                        <InfoIcon />
+                    </button>
+                    <div 
+                        id="info-panel"
+                        className={`absolute bottom-full right-0 mb-2 w-max bg-gray-800 text-white text-xs rounded px-3 py-2 shadow-lg transition-all duration-300 ease-out ${
+                            isInfoVisible 
+                                ? 'opacity-95 translate-y-0' 
+                                : 'opacity-0 translate-y-2 pointer-events-none'
+                        }`}
+                    >
+                        <p><b>Scroll/Pinch:</b> Zoom</p>
+                        <p><b>Drag Canvas:</b> Pan</p>
+                        <p><b>Hold Space + Drag:</b> Area Select</p>
+                        <p><b>Hold Space + Click Element:</b> Multi-select</p>
+                        <p><b>Tap Element (Mobile):</b> Toggle Select</p>
+                        <p><b>Long Press (Mobile):</b> Drag</p>
+                        <p><b>Click/Tap Element + Delete:</b> Remove</p>
+                    </div>
+                </div>
             </div>
         </div>
     );
