@@ -1,11 +1,10 @@
 # Darwin: High-Level Design Diagram Builder
 
 
-### Desktop View
-![Darwin Screenshot - Desktop](screenshots/desktop-main.png)
+<img src="screenshots/desktop-main.png" alt="Darwin Screenshot - Desktop" width="400"/>
 
 ### Mobile View
-![Darwin Screenshot - Mobile](screenshots/mobile-main.jpg)
+<img src="screenshots/mobile-main.jpg" alt="Darwin Screenshot - Mobile" width="400"/>
 
 Darwin is an interactive web application for creating High-Level Design (HLD) diagrams. Effortlessly drag and drop components like load balancers, databases, microservices, and more onto a canvas, connect them visually, and export or import your designs. Darwin is ideal for architects, engineers, and students who want to quickly sketch, share, and iterate on system architectures.
 
