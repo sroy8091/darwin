@@ -7,8 +7,7 @@ import { ExamplesModal } from './components/ExamplesModal';
 import { AddComponentButton } from './components/AddComponentButton';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { useHistory } from './hooks/useHistory';
-
-declare const htmlToImage: any;
+import { toPng, toJpeg } from 'html-to-image';
 
 export const App: React.FC = () => {
   const { 
@@ -27,7 +26,7 @@ export const App: React.FC = () => {
   const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
   const [isExamplesModalOpen, setIsExamplesModalOpen] = useState(false);
   
-  const canvasContentRef = useRef<HTMLDivElement>(null);
+  const canvasContentRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const canvasHandleRef = useRef<CanvasHandle>(null);
   const mainMenuRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -96,17 +95,28 @@ export const App: React.FC = () => {
     }
 }, [diagram.elements, selectedElementIds]);
 
-  const downloadFile = (filename: string, data: string, type: string) => {
-      const blob = new Blob([data], { type });
-      const href = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = href;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(href);
-  };
+  const downloadFile = (filename: string, data: string, type: string, isDataUrl = false) => {
+    if (isDataUrl) {
+        // For image exports, use the data URL directly
+        const link = document.createElement('a');
+        link.href = data;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } else {
+        // For JSON export, use Blob
+        const blob = new Blob([data], { type });
+        const href = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(href);
+    }
+};
 
   const handleExportImage = async (format: 'png' | 'jpeg') => {
     setIsMainMenuOpen(false);
@@ -116,7 +126,6 @@ export const App: React.FC = () => {
         return;
     }
 
-    const { toPng, toJpeg } = htmlToImage;
     const exporter = format === 'png' ? toPng : toJpeg;
     const PADDING = 50;
 
@@ -130,19 +139,22 @@ export const App: React.FC = () => {
 
     const width = maxX - minX + PADDING * 2;
     const height = maxY - minY + PADDING * 2;
-    
-    const dataUrl = await exporter(node, {
-        width,
-        height,
-        style: {
-            transform: `translate(${-minX + PADDING}px, ${-minY + PADDING}px) scale(1)`,
-            top: '0',
-            left: '0',
-        },
-        filter: (element: HTMLElement) => !element.classList?.contains('export-ignore'),
-    });
 
-    downloadFile(`hld-diagram.${format}`, dataUrl, `image/${format}`);
+    try {
+        const dataUrl = await exporter(node, {
+            width,
+            height,
+            style: {
+                transform: `translate(${-minX + PADDING}px, ${-minY + PADDING}px) scale(1)`,
+                top: '0',
+                left: '0',
+            },
+            filter: (element: HTMLElement) => !element.classList?.contains('export-ignore'),
+        });
+        downloadFile(`hld-diagram.${format}`, dataUrl, `image/${format}`, true);
+    } catch (err) {
+        console.error('Failed to export image:', err);
+    }
   };
 
   const handleExportJson = () => {
