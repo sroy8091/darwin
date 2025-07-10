@@ -1,6 +1,6 @@
 # Darwin: High-Level Design Diagram Builder
 
-
+### Desktop View
 <img src="screenshots/desktop-main.png" alt="Darwin Screenshot - Desktop" width="400"/>
 
 ### Mobile View
@@ -11,7 +11,7 @@ Darwin is an interactive web application for creating High-Level Design (HLD) di
 ## Darwin in action
 
 <p align="center">
-  <video src="screenshots/darwin-demo.mov" controls width="600"></video>
+  <video src="screenshots/darwin-demo.mp4" controls width="600"></video>
 </p>
 
 
@@ -26,6 +26,7 @@ Darwin is an interactive web application for creating High-Level Design (HLD) di
 - **Responsive UI:** Works beautifully on desktop and mobile devices.
 - **Export/Import:** Export your diagram as PNG/JPEG image or JSON. Import diagrams from JSON files.
 - **Example Architectures:** Load sample diagrams for e-commerce, social media, and video streaming systems.
+
 
 ## Getting Started
 
@@ -98,6 +99,18 @@ You can load these from the app's example menu.
 - [Vite](https://vitejs.dev/)
 - [Tailwind CSS](https://tailwindcss.com/) (via CDN)
 - TypeScript
+
+
+## Contributing
+
+We welcome contributions and feedback!
+If you find a bug, have a feature request, or want to improve Darwin, please [open an issue](https://github.com/sroy8091/darwin/issues) or submit a pull request.
+
+- Check the existing issues before creating a new one.
+- For major changes, please open an issue first to discuss what you would like to change.
+- See the `CONTRIBUTING.md` file for guidelines (if available).
+
+Your ideas, bug reports, and code are all appreciated—let’s make Darwin better together!
 
 ## License
 
