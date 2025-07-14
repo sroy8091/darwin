@@ -16,6 +16,8 @@ interface CanvasProps {
     setDiagram: (updater: React.SetStateAction<DiagramData>) => void;
     selectedElementIds: string[];
     setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
+    selectedConnectorIds: string[]; // NEW
+    setSelectedConnectorIds: React.Dispatch<React.SetStateAction<string[]>>; // NEW
     exportRef: React.RefObject<HTMLDivElement>;
 }
 
@@ -42,7 +44,7 @@ interface PinchState {
     initialTransform: Point;
 }
 
-const getAttachmentPoint = (el: ElementData, targetCenter: Point): Point => {
+const getAttachmentPoint = (el: ElementData, targetCenter: Point, offset = 16): Point => {
     const w = el.width || ELEMENT_CONFIG[el.type].defaultWidth || ELEMENT_DIMENSIONS.width;
     const h = el.height || ELEMENT_CONFIG[el.type].defaultHeight || ELEMENT_DIMENSIONS.height;
     const elCenter = { x: el.x + w / 2, y: el.y + h / 2 };
@@ -55,15 +57,39 @@ const getAttachmentPoint = (el: ElementData, targetCenter: Point): Point => {
     const tanA = Math.abs(dy / dx);
     const tanB = h / w;
 
+    let attach: Point;
     if (tanA < tanB) { // Intersects left or right side
-        return dx > 0 ? { x: el.x + w, y: elCenter.y } : { x: el.x, y: elCenter.y };
+        attach = dx > 0 ? { x: el.x + w, y: elCenter.y } : { x: el.x, y: elCenter.y };
     } else { // Intersects top or bottom side
-        return dy > 0 ? { x: elCenter.x, y: el.y + h } : { x: elCenter.x, y: el.y };
+        attach = dy > 0 ? { x: elCenter.x, y: el.y + h } : { x: elCenter.x, y: el.y };
     }
+    // Offset the attachment point outward so arrowhead is visible
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return attach;
+    const normX = dx / length;
+    const normY = dy / length;
+    return {
+        x: attach.x + normX * offset,
+        y: attach.y + normY * offset
+    };
 };
 
+// Helper: returns true if a point is near a line segment
+function isPointNearLine(p: Point, a: Point, b: Point, threshold = 12): boolean {
+    // Calculate distance from point p to line ab
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return false;
+    // Project p onto ab, clamp to segment
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (length * length)));
+    const closest = { x: a.x + t * dx, y: a.y + t * dy };
+    const dist = Math.sqrt((p.x - closest.x) ** 2 + (p.y - closest.y) ** 2);
+    return dist <= threshold;
+}
+
 const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps> = (
-    { diagram: propDiagram, setDiagram, selectedElementIds, setSelectedElementIds, exportRef },
+    { diagram: propDiagram, setDiagram, selectedElementIds, setSelectedElementIds, selectedConnectorIds, setSelectedConnectorIds, exportRef },
     ref
 ) => {
     const [localDiagram, setLocalDiagram] = useState(propDiagram);
@@ -569,6 +595,19 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
         }
     }, [elements, screenToWorld]);
 
+    // Add connector selection logic
+    const handlePointerDownOnConnector = useCallback((e: React.MouseEvent, connectorId: string) => {
+        e.stopPropagation();
+        if (isSpacePressed) {
+            // Multi-select
+            setSelectedConnectorIds(ids => ids.includes(connectorId) ? ids.filter(id => id !== connectorId) : [...ids, connectorId]);
+        } else {
+            // Toggle selection if already selected, else select only this
+            setSelectedConnectorIds(ids => ids.length === 1 && ids[0] === connectorId ? [] : [connectorId]);
+            setSelectedElementIds([]);
+        }
+    }, [isSpacePressed, setSelectedConnectorIds, setSelectedElementIds]);
+
     const getCursor = () => {
         if (selectionBox) return 'crosshair';
         if (isSpacePressed) return 'crosshair';
@@ -612,14 +651,14 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                     <defs>
                         <marker
                             id="arrowhead"
-                            markerWidth="5"
+                            viewBox="0 0 10 10"
+                            refX="7.5" // Move arrowhead closer to end
+                            refY="5"
+                            markerWidth="3.5" // Smaller arrowhead
                             markerHeight="3.5"
-                            refX="5"
-                            refY="1.75"
-                            orient="auto"
-                            markerUnits="strokeWidth"
+                            orient="auto-start-reverse"
                         >
-                            <polygon points="0 0, 5 1.75, 0 3.5" fill="#0891b2" />
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#0891b2" />
                         </marker>
                     </defs>
                     <g>
@@ -627,17 +666,30 @@ const CanvasComponent: React.ForwardRefRenderFunction<CanvasHandle, CanvasProps>
                             const fromEl = elements.find(el => el.id === conn.from);
                             const toEl = elements.find(el => el.id === conn.to);
                             if (!fromEl || !toEl) return null;
-
-                            const getElWidth = (el: ElementData) => el.width || ELEMENT_CONFIG[el.type].defaultWidth || ELEMENT_DIMENSIONS.width;
-                            const getElHeight = (el: ElementData) => el.height || ELEMENT_CONFIG[el.type].defaultHeight || ELEMENT_DIMENSIONS.height;
-                            
-                            const toCenter = { x: toEl.x + getElWidth(toEl) / 2, y: toEl.y + getElHeight(toEl) / 2 };
-                            const fromCenter = { x: fromEl.x + getElWidth(fromEl) / 2, y: fromEl.y + getElHeight(fromEl) / 2 };
-                            
-                            const startPoint = getAttachmentPoint(fromEl, toCenter);
-                            const endPoint = getAttachmentPoint(toEl, fromCenter);
-                            
-                            return <ConnectorLine key={conn.id} from={startPoint} to={endPoint} />;
+                            const fromPt = getAttachmentPoint(fromEl, { x: toEl.x + (toEl.width || ELEMENT_DIMENSIONS.width) / 2, y: toEl.y + (toEl.height || ELEMENT_DIMENSIONS.height) / 2 }, 0);
+                            const toPt = getAttachmentPoint(toEl, { x: fromEl.x + (fromEl.width || ELEMENT_DIMENSIONS.width) / 2, y: fromEl.y + (fromEl.height || ELEMENT_DIMENSIONS.height) / 2 }, 3); // Smaller offset for arrowhead
+                            return (
+                                <g key={conn.id}>
+                                    {/* Wide transparent line for hit area */}
+                                    <line
+                                        x1={fromPt.x}
+                                        y1={fromPt.y}
+                                        x2={toPt.x}
+                                        y2={toPt.y}
+                                        stroke="transparent"
+                                        strokeWidth={24}
+                                        style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                                        onMouseDown={e => handlePointerDownOnConnector(e, conn.id)}
+                                    />
+                                    {/* Actual visible connector */}
+                                    <ConnectorLine
+                                        from={fromPt}
+                                        to={toPt}
+                                        isSelected={selectedConnectorIds.includes(conn.id)}
+                                        onPointerDown={e => handlePointerDownOnConnector(e, conn.id)}
+                                    />
+                                </g>
+                            );
                         })}
 
                         {connecting && elements.find(el => el.id === connecting.fromId) && (

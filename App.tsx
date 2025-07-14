@@ -23,6 +23,7 @@ export const App: React.FC = () => {
   const { elements, connectors } = diagram;
   
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+  const [selectedConnectorIds, setSelectedConnectorIds] = useState<string[]>([]); // NEW
   const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
   const [isExamplesModalOpen, setIsExamplesModalOpen] = useState(false);
   
@@ -42,17 +43,23 @@ export const App: React.FC = () => {
   }, []);
 
   const handleDeleteSelected = useCallback(() => {
-    if (selectedElementIds.length === 0) return;
+    if (selectedElementIds.length === 0 && selectedConnectorIds.length === 0) return;
 
     setDiagram(currentDiagram => {
         const idsToDelete = new Set(selectedElementIds);
+        const connectorIdsToDelete = new Set(selectedConnectorIds);
         const newElements = currentDiagram.elements.filter(el => !idsToDelete.has(el.id));
-        const newConnectors = currentDiagram.connectors.filter(conn => !idsToDelete.has(conn.from) && !idsToDelete.has(conn.to));
+        const newConnectors = currentDiagram.connectors.filter(conn => 
+            !idsToDelete.has(conn.from) && 
+            !idsToDelete.has(conn.to) && 
+            !connectorIdsToDelete.has(conn.id)
+        );
         return { elements: newElements, connectors: newConnectors };
     });
 
     setSelectedElementIds([]);
-  }, [selectedElementIds, setDiagram]);
+    setSelectedConnectorIds([]);
+  }, [selectedElementIds, selectedConnectorIds, setDiagram]);
 
 
   useEffect(() => {
@@ -71,7 +78,7 @@ export const App: React.FC = () => {
       } else if (isRedo) {
         e.preventDefault();
         if (canRedo) redo();
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementIds.length > 0) {
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedElementIds.length > 0 || selectedConnectorIds.length > 0)) {
         e.preventDefault();
         handleDeleteSelected();
       }
@@ -81,7 +88,7 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [undo, redo, canUndo, canRedo, selectedElementIds, handleDeleteSelected]);
+  }, [undo, redo, canUndo, canRedo, selectedElementIds, selectedConnectorIds, handleDeleteSelected]);
 
   useEffect(() => {
     // This effect reconciles the selection state if the underlying elements change (e.g., after an undo/redo).
@@ -277,6 +284,8 @@ export const App: React.FC = () => {
                   setDiagram={setDiagram}
                   selectedElementIds={selectedElementIds}
                   setSelectedElementIds={setSelectedElementIds}
+                  selectedConnectorIds={selectedConnectorIds} // NEW
+                  setSelectedConnectorIds={setSelectedConnectorIds} // NEW
               />
             </main>
 
@@ -298,11 +307,11 @@ export const App: React.FC = () => {
                 </div>
                 
                 {/* Delete Button appears next to the Add/Undo stack on mobile when items are selected */}
-                {isMobile && selectedElementIds.length > 0 && (
+                {isMobile && (selectedElementIds.length > 0 || selectedConnectorIds.length > 0) && (
                     <button
                         onClick={handleDeleteSelected}
                         className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 transition-all duration-300 ease-in-out transform hover:scale-110 motion-safe:animate-delete-button-pop-in"
-                        aria-label="Delete selected components"
+                        aria-label="Delete selected components or connectors"
                     >
                         <TrashIcon />
                     </button>
