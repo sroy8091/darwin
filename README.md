@@ -10,7 +10,7 @@ Darwin is an interactive web application for creating High-Level Design (HLD) di
 
 ## Darwin in action
 
-![Darwin Demo](screenshots/darwin-demo.gif)
+<img src="screenshots/darwin-demo.gif" alt="Darwin Demo" width="700"/>
 
 
 ## Features
